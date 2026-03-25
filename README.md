@@ -6,9 +6,11 @@ Generate daily standup reports from your GitHub pull requests, enriched with AI-
 
 - Pulls PRs you authored from **all repos** via `gh` CLI
 - Fetches PR body and generates a **1-sentence AI summary**
-- **3 AI providers:** Gemini Flash, OpenAI GPT-4o Mini, Anthropic Claude Haiku
-- Outputs a **Markdown report** grouped by repository
-- Saves reports to `reports/YYYY-MM-DD.md`
+- **3 AI providers:** Gemini Flash, OpenAI GPT-4o Mini, Anthropic Claude Haiku (or disable AI entirely)
+- **Markdown + Slack** output formats with emoji status indicators
+- Clickable PR links in both formats
+- `--copy` to clipboard for quick pasting
+- Saves reports to `reports/`
 - Configurable time range via `--days` or `--since`
 
 ## Prerequisites
@@ -47,7 +49,7 @@ You only need the key for the provider you use. Set `AI_PROVIDER` in `.env` to c
 ## Usage
 
 ```bash
-# PRs from the last 24 hours (default provider)
+# PRs from the last 24 hours (default provider, markdown)
 ./standup.sh
 
 # PRs from the last 7 days
@@ -59,29 +61,55 @@ You only need the key for the provider you use. Set `AI_PROVIDER` in `.env` to c
 # Use a specific AI provider
 ./standup.sh --ai openai
 ./standup.sh --ai anthropic
-./standup.sh --days 7 --ai anthropic
 
 # Disable AI (just PR titles, no API key needed)
 ./standup.sh --ai false
+
+# Slack format (mrkdwn)
+./standup.sh --format slack
+
+# Slack format + copy to clipboard
+./standup.sh --days 7 --format slack --copy
+
+# Copy markdown to clipboard
+./standup.sh --days 7 --copy
 
 # Help
 ./standup.sh --help
 ```
 
-## Sample Output
+## Output Formats
+
+### Markdown (default)
 
 ```markdown
-## Standup Report - 2026-03-24 to 2026-03-25
+## Standup Report — 2026-03-24 to 2026-03-25
 
 ### nebulaltd/tokitoki
-- **[Merged]** PokPay payment integration (#47)
+- **✅ Merged** PokPay payment integration ([#47](https://github.com/...))
   > Integrated PokPay card sync and webhook handling with React 19 shim.
-- **[Merged]** Guest checkout, quantity modal, checkout UI fixes (#49)
+- **✅ Merged** Guest checkout, quantity modal, checkout UI fixes ([#49](https://github.com/...))
   > Added guest checkout flow and fixed quantity selection UI.
 
 ### nebulaltd/oddsy-backend
-- **[Open]** feat: tenant competition and team ordering (#188)
+- **🔄 Open** feat: tenant competition and team ordering ([#188](https://github.com/...))
   > Added tenant-level competition support with configurable team ordering.
+```
+
+### Slack (mrkdwn)
+
+```
+*Standup Report — 2026-03-24 to 2026-03-25*
+
+*nebulaltd/tokitoki* — 2 PRs
+• ✅ Merged PokPay payment integration (<https://github.com/...|#47>)
+  _Integrated PokPay card sync and webhook handling with React 19 shim._
+• ✅ Merged Guest checkout fixes (<https://github.com/...|#49>)
+  _Added guest checkout flow and fixed quantity selection UI._
+
+*nebulaltd/oddsy-backend* — 1 PRs
+• 🔄 Open feat: tenant competition and team ordering (<https://github.com/...|#188>)
+  _Added tenant-level competition support with configurable team ordering._
 ```
 
 ## Project Structure
@@ -92,14 +120,16 @@ standups/
 ├── .env.example        # Template for API keys
 ├── .env                # Your keys (git-ignored)
 ├── .gitignore
-├── reports/            # Generated reports (one per day)
-│   └── 2026-03-25.md
+├── reports/            # Generated reports
+│   ├── 2026-03-25.md
+│   └── 2026-03-25.slack.txt
 └── README.md
 ```
 
 ## How It Works
 
 1. **Fetch PRs** — `gh search prs --author=@me` for the given date range
-2. **Fetch PR bodies** — `gh api repos/{owner}/{repo}/pulls/{number}` for each PR
+2. **Fetch PR bodies** — `gh api repos/{owner}/{repo}/pulls/{number}` for each PR (skipped when `--ai false`)
 3. **AI summarize** — sends title + body (truncated to 1000 chars) to the selected provider for a 1-sentence description
-4. **Write report** — groups PRs by repo, formats as Markdown, saves to `reports/`
+4. **Render** — formats as Markdown or Slack mrkdwn with emoji statuses and clickable PR links
+5. **Save + copy** — writes to `reports/`, optionally copies to clipboard via `pbcopy`

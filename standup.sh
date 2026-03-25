@@ -2,22 +2,28 @@
 set -euo pipefail
 
 # Standup report generator - pulls PRs from GitHub via gh CLI + AI descriptions
-# Usage: ./standup.sh [--days N] [--since YYYY-MM-DD] [--ai gemini|openai|anthropic|false]
+# Usage: ./standup.sh [--days N] [--since YYYY-MM-DD] [--ai PROVIDER] [--format FORMAT] [--copy]
 
 DAYS=1
 SINCE=""
 AI_PROVIDER="${AI_PROVIDER:-gemini}"
+OUTPUT_FORMAT="${OUTPUT_FORMAT:-markdown}"
+COPY=false
 
 while [[ $# -gt 0 ]]; do
   case $1 in
     --days) DAYS="$2"; shift 2 ;;
     --since) SINCE="$2"; shift 2 ;;
     --ai) AI_PROVIDER="$2"; shift 2 ;;
+    --format) OUTPUT_FORMAT="$2"; shift 2 ;;
+    --copy) COPY=true; shift ;;
     -h|--help)
-      echo "Usage: ./standup.sh [--days N] [--since YYYY-MM-DD] [--ai PROVIDER]"
+      echo "Usage: ./standup.sh [--days N] [--since YYYY-MM-DD] [--ai PROVIDER] [--format FORMAT] [--copy]"
       echo "  --days N          PRs from the last N days (default: 1)"
       echo "  --since DATE      PRs since a specific date (YYYY-MM-DD)"
       echo "  --ai PROVIDER     AI provider: gemini, openai, anthropic, false (default: gemini)"
+      echo "  --format FORMAT   Output format: markdown, slack (default: markdown)"
+      echo "  --copy            Copy output to clipboard (pbcopy)"
       exit 0 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
@@ -43,7 +49,11 @@ TODAY=$(date +%Y-%m-%d)
 # Output directory
 REPORTS_DIR="${SCRIPT_DIR}/reports"
 mkdir -p "$REPORTS_DIR"
-OUTPUT_FILE="${REPORTS_DIR}/${TODAY}.md"
+if [[ "$OUTPUT_FORMAT" == "slack" ]]; then
+  OUTPUT_FILE="${REPORTS_DIR}/${TODAY}.slack.txt"
+else
+  OUTPUT_FILE="${REPORTS_DIR}/${TODAY}.md"
+fi
 
 # Check dependencies
 if ! command -v gh &>/dev/null; then
@@ -54,6 +64,15 @@ if ! command -v jq &>/dev/null; then
   echo "Error: jq not installed. Install via: brew install jq" >&2
   exit 1
 fi
+
+# Validate format
+case "$OUTPUT_FORMAT" in
+  markdown|slack) ;;
+  *)
+    echo "Error: Unknown format '${OUTPUT_FORMAT}'. Use: markdown, slack" >&2
+    exit 1
+    ;;
+esac
 
 # Validate provider and API key
 case "$AI_PROVIDER" in
@@ -82,7 +101,19 @@ case "$AI_PROVIDER" in
     ;;
 esac
 
-# Shared prompt for all providers
+# --- Emoji status ---
+
+emoji_status() {
+  case "$1" in
+    MERGED) echo "✅ Merged" ;;
+    OPEN)   echo "🔄 Open" ;;
+    CLOSED) echo "❌ Closed" ;;
+    *)      echo "$1" ;;
+  esac
+}
+
+# --- Shared prompt for all providers ---
+
 PR_PROMPT="Given this pull request, write a 1-sentence plain-text summary (max 15 words) of what was done. No markdown, no quotes, no prefix."
 
 # --- Provider functions ---
@@ -170,7 +201,73 @@ describe_pr() {
   esac
 }
 
-echo "Fetching PRs since ${START_DATE} (AI: ${AI_PROVIDER})..." >&2
+# --- Renderers ---
+
+render_markdown() {
+  echo "## Standup Report — ${START_DATE} to ${TODAY}"
+  echo ""
+
+  local current_repo=""
+  while IFS=$'\t' read -r repo number state title description url; do
+    if [[ "$repo" != "$current_repo" ]]; then
+      [[ -n "$current_repo" ]] && echo ""
+      echo "### ${repo}"
+      current_repo="$repo"
+    fi
+
+    local status
+    status=$(emoji_status "$state")
+    echo "- **${status}** ${title} ([#${number}](${url}))"
+    if [[ "$AI_PROVIDER" != "false" ]]; then
+      echo "  > ${description}"
+    fi
+  done < <(sort -t$'\t' -k1,1 "$ENRICHED")
+
+  echo ""
+}
+
+render_slack() {
+  echo "*Standup Report — ${START_DATE} to ${TODAY}*"
+  echo ""
+
+  local current_repo=""
+  local repo_count=0
+  local repo_lines=""
+
+  # First pass: collect and group
+  while IFS=$'\t' read -r repo number state title description url; do
+    if [[ "$repo" != "$current_repo" ]]; then
+      # Print previous repo header with count
+      if [[ -n "$current_repo" ]]; then
+        echo "*${current_repo}* — ${repo_count} PRs"
+        echo "$repo_lines"
+        echo ""
+      fi
+      current_repo="$repo"
+      repo_count=0
+      repo_lines=""
+    fi
+
+    repo_count=$((repo_count + 1))
+    local status
+    status=$(emoji_status "$state")
+    repo_lines+="• ${status} ${title} (<${url}|#${number}>)"
+    if [[ "$AI_PROVIDER" != "false" ]]; then
+      repo_lines+=$'\n'"  _${description}_"
+    fi
+    repo_lines+=$'\n'
+  done < <(sort -t$'\t' -k1,1 "$ENRICHED")
+
+  # Print last repo
+  if [[ -n "$current_repo" ]]; then
+    echo "*${current_repo}* — ${repo_count} PRs"
+    echo "$repo_lines"
+  fi
+}
+
+# --- Main ---
+
+echo "Fetching PRs since ${START_DATE} (AI: ${AI_PROVIDER}, format: ${OUTPUT_FORMAT})..." >&2
 
 # Fetch PRs
 PRS=$(gh search prs \
@@ -184,15 +281,21 @@ PRS=$(gh search prs \
 
 if [[ "$PRS" == "[]" || -z "$PRS" ]]; then
   {
-    echo "## Standup Report - ${START_DATE} to ${TODAY}"
-    echo ""
-    echo "No PRs found for this period."
+    if [[ "$OUTPUT_FORMAT" == "slack" ]]; then
+      echo "*Standup Report — ${START_DATE} to ${TODAY}*"
+      echo ""
+      echo "No PRs found for this period."
+    else
+      echo "## Standup Report — ${START_DATE} to ${TODAY}"
+      echo ""
+      echo "No PRs found for this period."
+    fi
   } | tee "$OUTPUT_FILE"
   echo "Report saved to ${OUTPUT_FILE}" >&2
   exit 0
 fi
 
-# Extract PR list as tab-separated: repo, number, title, state, url
+# Extract PR list as tab-separated: repo, number, state, title, url
 PR_LIST=$(echo "$PRS" | jq -r '.[] | [.repository.nameWithOwner, (.number|tostring), .state, .title, .url] | @tsv')
 
 # Fetch PR bodies and generate descriptions
@@ -220,30 +323,26 @@ while IFS=$'\t' read -r repo number state title url; do
     fi
   fi
 
-  echo -e "${repo}\t${number}\t${state}\t${title}\t${description}" >> "$ENRICHED"
+  echo -e "${repo}\t${number}\t${state}\t${title}\t${description}\t${url}" >> "$ENRICHED"
 done <<< "$PR_LIST"
 
 # Build report
 {
-  echo "## Standup Report - ${START_DATE} to ${TODAY}"
-  echo ""
-
-  current_repo=""
-  while IFS=$'\t' read -r repo number state title description; do
-    if [[ "$repo" != "$current_repo" ]]; then
-      [[ -n "$current_repo" ]] && echo ""
-      echo "### ${repo}"
-      current_repo="$repo"
-    fi
-
-    state_label=$(echo "$state" | sed 's/MERGED/Merged/;s/OPEN/Open/;s/CLOSED/Closed/')
-    echo "- **[${state_label}]** ${title} (#${number})"
-    if [[ "$AI_PROVIDER" != "false" ]]; then
-      echo "  > ${description}"
-    fi
-  done < <(sort -t$'\t' -k1,1 "$ENRICHED")
-
-  echo ""
+  if [[ "$OUTPUT_FORMAT" == "slack" ]]; then
+    render_slack
+  else
+    render_markdown
+  fi
 } | tee "$OUTPUT_FILE"
+
+# Copy to clipboard
+if [[ "$COPY" == true ]]; then
+  if command -v pbcopy &>/dev/null; then
+    pbcopy < "$OUTPUT_FILE"
+    echo "Copied to clipboard." >&2
+  else
+    echo "Warning: pbcopy not found. Skipping clipboard copy." >&2
+  fi
+fi
 
 echo "Report saved to ${OUTPUT_FILE}" >&2
