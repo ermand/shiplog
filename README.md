@@ -16,7 +16,7 @@ Generate daily standup reports from your GitHub pull requests, enriched with AI-
 - [gh CLI](https://cli.github.com/) — authenticated (`gh auth login`)
 - [jq](https://jqlang.github.io/jq/) — JSON processor
 - `curl` — pre-installed on macOS/Linux
-- API key for at least one provider (see below)
+- API key for an AI provider (optional — see below)
 
 ```bash
 brew install gh jq
