@@ -99,17 +99,21 @@ You only need the key for the provider you use. Set `AI_PROVIDER` in `.env` to c
 ### Slack (mrkdwn)
 
 ```
-*Standup Report — 2026-03-24 to 2026-03-25*
+📋 Standup Report — 2026-03-24 to 2026-03-25
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-*nebulaltd/tokitoki* — 2 PRs
-• ✅ Merged PokPay payment integration (<https://github.com/...|#47>)
-  _Integrated PokPay card sync and webhook handling with React 19 shim._
-• ✅ Merged Guest checkout fixes (<https://github.com/...|#49>)
-  _Added guest checkout flow and fixed quantity selection UI._
+📦 nebulaltd/tokitoki — 2 PRs
+  ✅ Merged PokPay payment integration (#47)
+        ↳ Integrated PokPay card sync and webhook handling with React 19 shim.
+        https://github.com/nebulaltd/tokitoki/pull/47
+  ✅ Merged Guest checkout fixes (#49)
+        ↳ Added guest checkout flow and fixed quantity selection UI.
+        https://github.com/nebulaltd/tokitoki/pull/49
 
-*nebulaltd/oddsy-backend* — 1 PRs
-• 🔄 Open feat: tenant competition and team ordering (<https://github.com/...|#188>)
-  _Added tenant-level competition support with configurable team ordering._
+📦 nebulaltd/oddsy-backend — 1 PRs
+  🔄 Open feat: tenant competition and team ordering (#188)
+        ↳ Added tenant-level competition support with configurable team ordering.
+        https://github.com/nebulaltd/oddsy-backend/pull/188
 ```
 
 ## Project Structure

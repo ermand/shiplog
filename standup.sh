@@ -104,7 +104,9 @@ esac
 # --- Emoji status ---
 
 emoji_status() {
-  case "$1" in
+  local state
+  state=$(echo "$1" | tr '[:lower:]' '[:upper:]')
+  case "$state" in
     MERGED) echo "✅ Merged" ;;
     OPEN)   echo "🔄 Open" ;;
     CLOSED) echo "❌ Closed" ;;
@@ -218,7 +220,7 @@ render_markdown() {
     local status
     status=$(emoji_status "$state")
     echo "- **${status}** ${title} ([#${number}](${url}))"
-    if [[ "$AI_PROVIDER" != "false" ]]; then
+    if [[ "$AI_PROVIDER" != "false" && "$description" != "$title" ]]; then
       echo "  > ${description}"
     fi
   done < <(sort -t$'\t' -k1,1 "$ENRICHED")
@@ -227,7 +229,8 @@ render_markdown() {
 }
 
 render_slack() {
-  echo "*Standup Report — ${START_DATE} to ${TODAY}*"
+  echo "📋 Standup Report — ${START_DATE} to ${TODAY}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
 
   local current_repo=""
@@ -239,9 +242,8 @@ render_slack() {
     if [[ "$repo" != "$current_repo" ]]; then
       # Print previous repo header with count
       if [[ -n "$current_repo" ]]; then
-        echo "*${current_repo}* — ${repo_count} PRs"
+        echo "📦 ${current_repo} — ${repo_count} PRs"
         echo "$repo_lines"
-        echo ""
       fi
       current_repo="$repo"
       repo_count=0
@@ -251,16 +253,16 @@ render_slack() {
     repo_count=$((repo_count + 1))
     local status
     status=$(emoji_status "$state")
-    repo_lines+="• ${status} ${title} (<${url}|#${number}>)"
-    if [[ "$AI_PROVIDER" != "false" ]]; then
-      repo_lines+=$'\n'"  _${description}_"
+    repo_lines+="  ${status} ${title} (#${number})"
+    if [[ "$AI_PROVIDER" != "false" && "$description" != "$title" ]]; then
+      repo_lines+=$'\n'"        ↳ ${description}"
     fi
-    repo_lines+=$'\n'
+    repo_lines+=$'\n'"        ${url}"$'\n'
   done < <(sort -t$'\t' -k1,1 "$ENRICHED")
 
   # Print last repo
   if [[ -n "$current_repo" ]]; then
-    echo "*${current_repo}* — ${repo_count} PRs"
+    echo "📦 ${current_repo} — ${repo_count} PRs"
     echo "$repo_lines"
   fi
 }
@@ -282,7 +284,7 @@ PRS=$(gh search prs \
 if [[ "$PRS" == "[]" || -z "$PRS" ]]; then
   {
     if [[ "$OUTPUT_FORMAT" == "slack" ]]; then
-      echo "*Standup Report — ${START_DATE} to ${TODAY}*"
+      echo "📋 Standup Report — ${START_DATE} to ${TODAY}"
       echo ""
       echo "No PRs found for this period."
     else
