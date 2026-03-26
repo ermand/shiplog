@@ -1,6 +1,6 @@
 # Standup Report Generator
 
-Generate daily standup reports from your GitHub pull requests, enriched with AI-generated descriptions.
+Cross-platform CLI that generates daily standup reports from your GitHub pull requests, enriched with AI-generated descriptions. Built with TypeScript + Bun for single-binary executables on macOS, Linux, and Windows.
 
 ## Features
 
@@ -9,19 +9,26 @@ Generate daily standup reports from your GitHub pull requests, enriched with AI-
 - **3 AI providers:** Gemini Flash, OpenAI GPT-4o Mini, Anthropic Claude Haiku (or disable AI entirely)
 - **Markdown + Slack** output formats with emoji status indicators
 - Clickable PR links in both formats
-- `--copy` to clipboard for quick pasting
+- `--copy` to clipboard (cross-platform: pbcopy, clip, xclip)
 - Saves reports to `reports/`
 - Configurable time range via `--days` or `--since`
+- **Compiles to a single binary** — no runtime needed
 
 ## Prerequisites
 
 - [gh CLI](https://cli.github.com/) — authenticated (`gh auth login`)
-- [jq](https://jqlang.github.io/jq/) — JSON processor
-- `curl` — pre-installed on macOS/Linux
+- [Bun](https://bun.sh/) — for development and building (not needed if using compiled binary)
 - API key for an AI provider (optional — see below)
 
 ```bash
-brew install gh jq
+# macOS
+brew install gh
+curl -fsSL https://bun.sh/install | bash
+
+# Windows
+winget install GitHub.cli
+powershell -c "irm bun.sh/install.ps1 | iex"
+
 gh auth login
 ```
 
@@ -30,9 +37,9 @@ gh auth login
 ```bash
 git clone <your-repo-url> standups
 cd standups
+bun install
 cp .env.example .env
 # Add your API key(s) to .env
-chmod +x standup.sh
 ```
 
 ## AI Providers
@@ -49,34 +56,51 @@ You only need the key for the provider you use. Set `AI_PROVIDER` in `.env` to c
 ## Usage
 
 ```bash
-# PRs from the last 24 hours (default provider, markdown)
-./standup.sh
+# Dev mode (requires Bun)
+bun run dev -- --days 7
 
-# PRs from the last 7 days
-./standup.sh --days 7
+# Or with compiled binary
+./standup --days 7
+
+# PRs from the last 24 hours (default)
+./standup
 
 # PRs since a specific date
-./standup.sh --since 2026-03-01
+./standup --since 2026-03-01
 
 # Use a specific AI provider
-./standup.sh --ai openai
-./standup.sh --ai anthropic
+./standup --ai openai
+./standup --ai anthropic
 
 # Disable AI (just PR titles, no API key needed)
-./standup.sh --ai false
+./standup --ai false
 
-# Slack format (mrkdwn)
-./standup.sh --format slack
+# Slack format
+./standup --format slack
 
 # Slack format + copy to clipboard
-./standup.sh --days 7 --format slack --copy
+./standup --days 7 --format slack --copy
 
 # Copy markdown to clipboard
-./standup.sh --days 7 --copy
+./standup --days 7 --copy
 
 # Help
-./standup.sh --help
+./standup --help
 ```
+
+## Building
+
+```bash
+# Build for current platform
+bun run build
+
+# Cross-compile
+bun run build:macos     # → dist/standup-macos
+bun run build:linux     # → dist/standup-linux
+bun run build:windows   # → dist/standup.exe
+```
+
+The compiled binary includes the Bun runtime — no dependencies needed on the target machine (except `gh`).
 
 ## Output Formats
 
@@ -96,38 +120,40 @@ You only need the key for the provider you use. Set `AI_PROVIDER` in `.env` to c
   > Added tenant-level competition support with configurable team ordering.
 ```
 
-### Slack (mrkdwn)
+### Slack
 
 ```
-📋 Standup Report — 2026-03-24 to 2026-03-25
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Standup — 2026-03-24 to 2026-03-25
 
-📦 nebulaltd/tokitoki — 2 PRs
-  ✅ Merged PokPay payment integration (#47)
-        ↳ Integrated PokPay card sync and webhook handling with React 19 shim.
-        https://github.com/nebulaltd/tokitoki/pull/47
-  ✅ Merged Guest checkout fixes (#49)
-        ↳ Added guest checkout flow and fixed quantity selection UI.
-        https://github.com/nebulaltd/tokitoki/pull/49
+*nebulaltd/tokitoki* — 2 PRs
+1. [Merged] PokPay payment integration — PR#47
+    Integrated PokPay card sync and webhook handling with React 19 shim.
+2. [Merged] Guest checkout fixes — PR#49
+    Added guest checkout flow and fixed quantity selection UI.
 
-📦 nebulaltd/oddsy-backend — 1 PRs
-  🔄 Open feat: tenant competition and team ordering (#188)
-        ↳ Added tenant-level competition support with configurable team ordering.
-        https://github.com/nebulaltd/oddsy-backend/pull/188
+*nebulaltd/oddsy-backend* — 1 PR
+1. [Open] feat: tenant competition and team ordering — PR#188
+    Added tenant-level competition support with configurable team ordering.
 ```
 
 ## Project Structure
 
 ```
 standups/
-├── standup.sh          # Main script
-├── .env.example        # Template for API keys
+├── src/
+│   ├── index.ts        # CLI entry point
+│   ├── github.ts       # gh CLI wrappers
+│   ├── providers.ts    # AI provider API calls
+│   ├── renderers.ts    # Markdown + Slack formatters
+│   ├── clipboard.ts    # Cross-platform clipboard
+│   └── utils.ts        # Env loader, date helpers, emoji status
+├── standup.sh          # Legacy bash script
+├── package.json
+├── tsconfig.json
+├── .env.example
 ├── .env                # Your keys (git-ignored)
 ├── .gitignore
-├── reports/            # Generated reports
-│   ├── 2026-03-25.md
-│   └── 2026-03-25.slack.txt
-└── README.md
+└── reports/            # Generated reports
 ```
 
 ## How It Works
@@ -135,5 +161,5 @@ standups/
 1. **Fetch PRs** — `gh search prs --author=@me` for the given date range
 2. **Fetch PR bodies** — `gh api repos/{owner}/{repo}/pulls/{number}` for each PR (skipped when `--ai false`)
 3. **AI summarize** — sends title + body (truncated to 1000 chars) to the selected provider for a 1-sentence description
-4. **Render** — formats as Markdown or Slack mrkdwn with emoji statuses and clickable PR links
-5. **Save + copy** — writes to `reports/`, optionally copies to clipboard via `pbcopy`
+4. **Render** — formats as Markdown or Slack with emoji statuses and PR links
+5. **Save + copy** — writes to `reports/`, optionally copies to clipboard

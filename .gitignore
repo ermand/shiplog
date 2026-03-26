@@ -1,2 +1,6 @@
 .env
 reports/
+node_modules/
+dist/
+standup
+bun.lock

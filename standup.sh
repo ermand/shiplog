@@ -228,41 +228,51 @@ render_markdown() {
   echo ""
 }
 
+slack_status() {
+  local state
+  state=$(echo "$1" | tr '[:lower:]' '[:upper:]')
+  case "$state" in
+    MERGED) echo "merged" ;;
+    OPEN)   echo "open" ;;
+    CLOSED) echo "closed" ;;
+    *)      echo "$1" ;;
+  esac
+}
+
+# Extract short repo name from "owner/repo"
+short_repo() {
+  echo "$1" | sed 's|.*/||'
+}
+
 render_slack() {
-  echo "📋 Standup Report — ${START_DATE} to ${TODAY}"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "Standup ${START_DATE} → ${TODAY}"
   echo ""
 
   local current_repo=""
-  local repo_count=0
   local repo_lines=""
 
-  # First pass: collect and group
   while IFS=$'\t' read -r repo number state title description url; do
     if [[ "$repo" != "$current_repo" ]]; then
-      # Print previous repo header with count
       if [[ -n "$current_repo" ]]; then
-        echo "📦 ${current_repo} — ${repo_count} PRs"
+        echo "$(short_repo "$current_repo"):"
         echo "$repo_lines"
+        echo ""
       fi
       current_repo="$repo"
-      repo_count=0
       repo_lines=""
     fi
 
-    repo_count=$((repo_count + 1))
     local status
-    status=$(emoji_status "$state")
-    repo_lines+="  ${status} ${title} (#${number})"
+    status=$(slack_status "$state")
+    repo_lines+="  • [${status}] ${title} ${url}"
     if [[ "$AI_PROVIDER" != "false" && "$description" != "$title" ]]; then
-      repo_lines+=$'\n'"        ↳ ${description}"
+      repo_lines+=$'\n'"    ↳ ${description}"
     fi
-    repo_lines+=$'\n'"        ${url}"$'\n'
+    repo_lines+=$'\n'
   done < <(sort -t$'\t' -k1,1 "$ENRICHED")
 
-  # Print last repo
   if [[ -n "$current_repo" ]]; then
-    echo "📦 ${current_repo} — ${repo_count} PRs"
+    echo "$(short_repo "$current_repo"):"
     echo "$repo_lines"
   fi
 }
@@ -284,7 +294,7 @@ PRS=$(gh search prs \
 if [[ "$PRS" == "[]" || -z "$PRS" ]]; then
   {
     if [[ "$OUTPUT_FORMAT" == "slack" ]]; then
-      echo "📋 Standup Report — ${START_DATE} to ${TODAY}"
+      echo "Standup ${START_DATE} → ${TODAY}"
       echo ""
       echo "No PRs found for this period."
     else
